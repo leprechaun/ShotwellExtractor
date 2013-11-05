@@ -25,6 +25,7 @@ class Photo(Base):
     width = Column(Integer)
     height = Column(Integer)
     filesize = Column(Integer)
+    timestamp = Column(Integer)
     exposure_time = Column(Integer)
     orientation = Column(Integer)
     original_orientation = Column(Integer)

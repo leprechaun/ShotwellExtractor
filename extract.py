@@ -94,7 +94,7 @@ for tag in tags:
     photo_list.extend(tag.photo_list)
 
 photo_list = []
-q = session.query(Photo).all()
+q = session.query(Photo).filter(Photo.timestamp > from_date).all()
 photo_list = [p.id for p in q]
 
 photo_list = list(set(photo_list))
