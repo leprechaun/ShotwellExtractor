@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Usage:
-  test.py [--database=<database>] [--include-tags=<tags>] [--exclude-tags=<tags>] [--from-date=<date>] [--export-path=<path>] [--thumbnail-path=<path>]
+  extract.py [--database=<database>] [--include-tags=<tags>] [--exclude-tags=<tags>] [--from-date=<date>] [--export-path=<path>] [--thumbnail-path=<path>]
 """
 from docopt import docopt
 
@@ -8,6 +8,8 @@ import sqlite3
 import os.path
 import json
 import shutil
+import time
+import datetime
 
 import sqlalchemy
 #from sqlalchemy import create_engine
@@ -38,6 +40,9 @@ if arguments['--include-tags'] is not None:
 from_date = None
 if arguments['--from-date'] is not None:
     from_date = arguments['--from-date']
+    from_date = time.mktime(datetime.datetime.strptime(from_date, "%Y/%m/%d").timetuple())
+else:
+    from_date = 0
 
 export_path = "output/"
 if arguments['--export-path'] is not None:
@@ -55,7 +60,10 @@ os.mkdir(export_path + "/tags")
 os.mkdir(export_path + "/thumbnails")
 
 def remove_ids_from_list(l, ids):
-    [l.remove(i) for i in ids]
+    try:
+        [l.remove(i) for i in ids]
+    except ValueError:
+        pass
 
 def chunks(l, n):
     """ Yield successive n-sized chunks from l.
@@ -85,6 +93,10 @@ photo_list = []
 for tag in tags:
     photo_list.extend(tag.photo_list)
 
+photo_list = []
+q = session.query(Photo).all()
+photo_list = [p.id for p in q]
+
 photo_list = list(set(photo_list))
 print("Unfiltered pictures:", str(len(photo_list)))
 #[photo_list.remove(ex) for ex in exclude_photos]
@@ -105,6 +117,7 @@ all_pictures = []
 
 tag_picture_hash = {t.name: t.photo_list for t in tags}
 tagsjs = {}
+tagsjs['NoTag'] = {'name':"NoTag", 'pictures':[], 'picture_count': 0, 'thumbnail': None}
 
 for chunk in chunks(photo_list, 100):
         photo_chunk = session.query(Photo).filter(Photo.id.in_(chunk))
@@ -120,6 +133,11 @@ for chunk in chunks(photo_list, 100):
                     else:
                         tagsjs[tag]['pictures'].append(p)
                         tagsjs[tag]['picture_count'] = tagsjs[tag]['picture_count'] + 1
+
+            if len(p.tags) == 0:
+                p.tags.append('NoTag')
+                tagsjs['NoTag']['picture_count'] = tagsjs['NoTag']['picture_count'] + 1
+                tagsjs['NoTag']['pictures'].append(p)
 
             pdict = as_dict(p, "id,path,thumbnail,exposure_time,orientation,tags")
             pdict['size'] = {'height': p.height, 'width': p.width}
