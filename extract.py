@@ -80,7 +80,7 @@ if include == []:
 else:
     tags = session.query(Tag).filter(Tag.name.in_(include))
 
-if exclude is not []:
+if len(exclude) > 0:
     exlusions = []
     exclude_tags = session.query(Tag).filter(Tag.name.in_(exclude))
     exclude_photos = []
@@ -88,6 +88,8 @@ if exclude is not []:
         exclude_photos.extend(ex_tag.photo_list)
 
     exclude_photos = list(set(exclude_photos))
+else:
+    exclude_photos = []
 
 photo_list = []
 for tag in tags:
@@ -141,6 +143,10 @@ for chunk in chunks(photo_list, 100):
 
             pdict = as_dict(p, "id,path,thumbnail,exposure_time,orientation,tags")
             pdict['size'] = {'height': p.height, 'width': p.width}
+            dt = p.exposure_time
+            if p.exposure_time == 0:
+                dt = p.time_created
+            pdict['datetime'] = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d %H:%M:%S')
             dump_json(pdict, export_path + "/pictures/" + str(p.id) + ".json")
 
             all_pictures.append(as_dict(p, "id,thumbnail,path"))
@@ -152,6 +158,8 @@ for t in tagsjs:
     to = {'name': t, 'pictures': [], 'thumbnail': tagsjs[t]['thumbnail']}
     for p in tagsjs[t]['pictures']:
         to['pictures'].append(as_dict(p, "id,thumbnail,title,path"))
+
+    to['picture_count'] = len(to['pictures'])
     dump_json(to, export_path + "/tags/" + t + ".json")
 
 dump_json(all_pictures, export_path + "/pictures/all-pictures.json")

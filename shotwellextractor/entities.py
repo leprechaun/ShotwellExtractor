@@ -25,8 +25,8 @@ class Photo(Base):
     width = Column(Integer)
     height = Column(Integer)
     filesize = Column(Integer)
-    timestamp = Column(Integer)
     exposure_time = Column(Integer)
+    timestamp = Column(Integer)
     orientation = Column(Integer)
     original_orientation = Column(Integer)
     import_id = Column(Integer)
@@ -68,10 +68,17 @@ class Event(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String)
-    primary_photo_id = Column(Integer)
+    primary_photo_id = Column(String)
     time_created = Column(Integer)
-    primary_source_id = Column(Integer)
+    primary_source_id = Column(String)
     comment = Column(String)
+
+    @property
+    def primary_source_translated(self):
+        t = str(self.primary_source_id)
+        t = t.ltrim("thumb").ltrim("0")
+        return int(t, 16)
+
 
 class Tag(Base):
     __tablename__ = "tagtable"
