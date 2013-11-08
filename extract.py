@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Usage:
-  extract.py [--database=<database>] [--include-tags=<tags>] [--exclude-tags=<tags>] [--from-date=<date>] [--export-path=<path>] [--thumbnail-path=<path>]
+  extract.py [--database=<database>] [--include-tags=<tags>] [--exclude-tags=<tags>] [--from-date=<Y/m/d>] [--export-path=<path>] [--thumbnail-path=<path>]
 """
 from docopt import docopt
 
@@ -51,6 +51,7 @@ if arguments['--thumbnail-path'] is not None:
     if not os.path.isdir(thumbnail_path):
         exit()
 
+# Watchout, this could be dangerous. Perhaps it shouldn't be the default.
 shutil.rmtree(export_path)
 os.mkdir(export_path)
 os.mkdir(export_path + "/pictures")
@@ -72,6 +73,8 @@ def chunks(l, n):
 print("From Date:", from_date)
 print("Exclude:", exclude)
 print("Include:", include)
+print("Thumbnails:", thumbnail_path)
+print("Output:", export_path)
 
 if include == []:
     tags = session.query(Tag).all()
@@ -98,10 +101,11 @@ q = session.query(Photo).filter(Photo.timestamp > from_date).all()
 photo_list = [p.id for p in q]
 
 photo_list = list(set(photo_list))
-print("Unfiltered pictures:", str(len(photo_list)))
+unfiltered_count = len(photo_list)
 #[photo_list.remove(ex) for ex in exclude_photos]
 remove_ids_from_list(photo_list, exclude_photos)
-print("Filtered pictures:", str(len(photo_list)))
+filtered_count = len(photo_list)
+print("Exporting:", str(filtered_count), "(" + str(unfiltered_count - filtered_count) + " filtered)")
 
 def dump_json(obj, dest):
     js = json.dumps(obj)
@@ -152,7 +156,10 @@ for chunk in chunks(photo_list, 100):
             dump_json(pdict, export_path + "/pictures/" + str(p.id) + ".json")
 
             all_pictures.append(as_dict(p, "id,thumbnail,path"))
-            shutil.copy(thumbnail_path + "/" + p.thumbnail, export_path + "/thumbnails/" + p.thumbnail)
+            try:
+                shutil.copy(thumbnail_path + "/" + p.thumbnail, export_path + "/thumbnails/" + p.thumbnail)
+            except FileNotFoundError:
+                print(p.thumbnail, "not found ... skipping copy")
 
 tags_file = [{'name': t, 'picture_count': tagsjs[t]['picture_count'], 'thumbnail': tagsjs[t]['thumbnail']} for t in tagsjs]
 
