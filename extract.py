@@ -124,8 +124,10 @@ tag_picture_hash = {t.name: t.photo_list for t in tags}
 tagsjs = {}
 tagsjs['NoTag'] = {'name':"NoTag", 'pictures':[], 'picture_count': 0, 'thumbnail': None}
 
+events = {}
+
 for chunk in chunks(photo_list, 100):
-        photo_chunk = session.query(Photo).filter(Photo.id.in_(chunk))
+        photo_chunk = session.query(Photo).filter(Photo.id.in_(chunk)).filter(Photo.exposure_time > from_date)
         for p in photo_chunk:
             p.tags = []
             for tag in tag_picture_hash:
@@ -138,6 +140,7 @@ for chunk in chunks(photo_list, 100):
                     else:
                         tagsjs[tag]['pictures'].append(p)
                         tagsjs[tag]['picture_count'] = tagsjs[tag]['picture_count'] + 1
+
 
             if len(p.tags) == 0:
                 p.tags.append('NoTag')
