@@ -12,8 +12,6 @@ import time
 import datetime
 
 import sqlalchemy
-#from sqlalchemy import create_engine
-#from sqlalchemy.orm import sessionmaker
 
 from shotwellextractor.entities import *
 
@@ -146,6 +144,10 @@ for chunk in chunks(photo_list, 100):
             dt = p.exposure_time
             if p.exposure_time == 0:
                 dt = p.time_created
+
+            if p.title is None:
+                p.title = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d %H:%M:%S')
+
             pdict['datetime'] = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d %H:%M:%S')
             dump_json(pdict, export_path + "/pictures/" + str(p.id) + ".json")
 
