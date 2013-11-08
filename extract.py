@@ -46,6 +46,7 @@ export_path = "output/"
 if arguments['--export-path'] is not None:
     export_path = arguments['--export-path']
 
+thumbnail_path = os.path.expanduser("~/.cache/shotwell/thumbs/thumbs128")
 if arguments['--thumbnail-path'] is not None:
     thumbnail_path = os.path.expanduser(arguments['--thumbnail-path'])
     if not os.path.isdir(thumbnail_path):
