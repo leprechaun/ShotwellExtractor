@@ -10,6 +10,9 @@ import json
 import shutil
 import time
 import datetime
+from exifread import process_file
+from exifread.tags import DEFAULT_STOP_TAG, FIELD_TYPES
+import exifread.utils
 
 import sqlalchemy
 
@@ -117,12 +120,51 @@ def as_dict(obj, attr):
     attr = attr.split(",")
     return {c: getattr(obj, c) for c in attr}
 
+
+"""
+['EXIF ApertureValue', 'EXIF BrightnessValue', 'EXIF ColorSpace', 'EXIF DateTimeDigitized', 'EXIF DateTimeOriginal', 'EXIF ExifImageLength', 'EXIF ExifImageWidth', 'EXIF ExifVersion', 'EXIF ExposureBiasValue', 'EXIF ExposureMode', 'EXIF ExposureProgram', 'EXIF ExposureTime', 'EXIF FNumber', 'EXIF Flash', 'EXIF FocalLength', 'EXIF ISOSpeedRatings', 'EXIF MaxApertureValue', 'EXIF MeteringMode', 'EXIF SceneCaptureType', 'EXIF ShutterSpeedValue', 'EXIF UserComment', 'EXIF WhiteBalance', 'GPS GPSAltitude', 'GPS GPSAltitudeRef', 'GPS GPSDate', 'GPS GPSLatitude', 'GPS GPSLatitudeRef', 'GPS GPSLongitude', 'GPS GPSLongitudeRef', 'GPS GPSProcessingMethod', 'GPS GPSTimeStamp', 'GPS GPSVersionID', 'Image DateTime', 'Image ExifOffset', 'Image GPSInfo', 'Image ImageLength', 'Image ImageWidth', 'Image Make', 'Image Model', 'Image Orientation', 'Image Software', 'Image YCbCrPositioning', 'JPEGThumbnail', 'Thumbnail Compression', 'Thumbnail ImageLength', 'Thumbnail ImageWidth', 'Thumbnail JPEGInterchangeFormat', 'Thumbnail JPEGInterchangeFormatLength', 'Thumbnail Orientation', 'Thumbnail ResolutionUnit', 'Thumbnail XResolution', 'Thumbnail YResolution']
+"""
+def read_exif(filename):
+    e = {}
+    f = open(filename, 'rb')
+    exif = process_file(f)
+    if 'JPEGThumbnail' in exif:
+        del exif['JPEGThumbnail']
+    if 'TIFFThumbnail' in exif:
+        del exif['TIFFThumbnail']
+
+    exif_tag_names = list(exif.keys())
+    exif_tag_names.sort()
+
+    for etn in exif_tag_names:
+        if type(exif[etn].values) == str:
+            e[etn] = exif[etn].values
+
+        elif type(exif[etn].values) == int:
+            e[etn] = exif[etn].values
+
+        elif type(exif[etn].values) == list:
+            tmp = []
+            for v in exif[etn].values:
+                if type(v) == exifread.utils.Ratio:
+                    tmp.append((v.num, v.den))
+                elif type(v) == int:
+                    tmp.append(v)
+                else:
+                    print(etn, v, type(v))
+
+            e[etn] = tmp
+
+    return e
+
+
 all_pictures = []
 
 
 tag_picture_hash = {t.name: t.photo_list for t in tags}
 tagsjs = {}
 tagsjs['NoTag'] = {'name':"NoTag", 'pictures':[], 'picture_count': 0, 'thumbnail': None}
+tagsjs['WithGPS'] = {'name':"WithGPS", 'pictures':[], 'picture_count': 0, 'thumbnail': None}
 
 events = {}
 
@@ -156,7 +198,14 @@ for chunk in chunks(photo_list, 100):
             if p.title is None:
                 p.title = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d %H:%M:%S')
 
+
             pdict['datetime'] = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d %H:%M:%S')
+            pdict['exif'] = read_exif(p.filename)
+
+            if 'GPS GPSLongitudeRef' in pdict['exif']:
+                tagsjs['WithGPS']['picture_count'] = tagsjs['WithGPS']['picture_count'] + 1
+                tagsjs['WithGPS']['pictures'].append(p)
+
             dump_json(pdict, export_path + "/pictures/" + str(p.id) + ".json")
 
             all_pictures.append(as_dict(p, "id,thumbnail,path"))
