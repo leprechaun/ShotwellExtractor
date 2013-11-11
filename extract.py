@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Usage:
-  extract.py [--database=<database>] [--include-tags=<tags>] [--exclude-tags=<tags>] [--from-date=<Y/m/d>] [--export-path=<path>] [--thumbnail-path=<path>]
+  extract.py [--database=<database>] [--include-tags=<tags>] [--exclude-tags=<tags>] [--from-date=<Y/m/d>] [--export-path=<path>] [--thumbnail-path=<path>] [-e]
 """
 from docopt import docopt
+
+import sqlalchemy
+from shotwellextractor.entities import *
 
 import sqlite3
 import os.path
@@ -10,13 +13,12 @@ import json
 import shutil
 import time
 import datetime
+
+import exifread.utils
 from exifread import process_file
 from exifread.tags import DEFAULT_STOP_TAG, FIELD_TYPES
-import exifread.utils
 
-import sqlalchemy
 
-from shotwellextractor.entities import *
 
 arguments = docopt(__doc__, version='0.1.1rc')
 if arguments['--database'] is not None:
@@ -55,61 +57,15 @@ if arguments['--thumbnail-path'] is not None:
     if not os.path.isdir(thumbnail_path):
         exit()
 
+with_exif = arguments['-e']
+
+
 # Watchout, this could be dangerous. Perhaps it shouldn't be the default.
 shutil.rmtree(export_path)
 os.mkdir(export_path)
 os.mkdir(export_path + "/pictures")
 os.mkdir(export_path + "/tags")
 os.mkdir(export_path + "/thumbnails")
-
-def remove_ids_from_list(l, ids):
-    try:
-        [l.remove(i) for i in ids]
-    except ValueError:
-        pass
-
-def chunks(l, n):
-    """ Yield successive n-sized chunks from l.
-    """
-    for i in range(0, len(l), n):
-        yield l[i:i+n]
-
-print("From Date:", from_date)
-print("Exclude:", exclude)
-print("Include:", include)
-print("Thumbnails:", thumbnail_path)
-print("Output:", export_path)
-
-if include == []:
-    tags = session.query(Tag).all()
-else:
-    tags = session.query(Tag).filter(Tag.name.in_(include))
-
-if len(exclude) > 0:
-    exlusions = []
-    exclude_tags = session.query(Tag).filter(Tag.name.in_(exclude))
-    exclude_photos = []
-    for ex_tag in exclude_tags:
-        exclude_photos.extend(ex_tag.photo_list)
-
-    exclude_photos = list(set(exclude_photos))
-else:
-    exclude_photos = []
-
-photo_list = []
-for tag in tags:
-    photo_list.extend(tag.photo_list)
-
-photo_list = []
-q = session.query(Photo).filter(Photo.timestamp > from_date).all()
-photo_list = [p.id for p in q]
-
-photo_list = list(set(photo_list))
-unfiltered_count = len(photo_list)
-#[photo_list.remove(ex) for ex in exclude_photos]
-remove_ids_from_list(photo_list, exclude_photos)
-filtered_count = len(photo_list)
-print("Exporting:", str(filtered_count), "(" + str(unfiltered_count - filtered_count) + " filtered)")
 
 def dump_json(obj, dest):
     js = json.dumps(obj)
@@ -120,14 +76,18 @@ def as_dict(obj, attr):
     attr = attr.split(",")
     return {c: getattr(obj, c) for c in attr}
 
-
-"""
-['EXIF ApertureValue', 'EXIF BrightnessValue', 'EXIF ColorSpace', 'EXIF DateTimeDigitized', 'EXIF DateTimeOriginal', 'EXIF ExifImageLength', 'EXIF ExifImageWidth', 'EXIF ExifVersion', 'EXIF ExposureBiasValue', 'EXIF ExposureMode', 'EXIF ExposureProgram', 'EXIF ExposureTime', 'EXIF FNumber', 'EXIF Flash', 'EXIF FocalLength', 'EXIF ISOSpeedRatings', 'EXIF MaxApertureValue', 'EXIF MeteringMode', 'EXIF SceneCaptureType', 'EXIF ShutterSpeedValue', 'EXIF UserComment', 'EXIF WhiteBalance', 'GPS GPSAltitude', 'GPS GPSAltitudeRef', 'GPS GPSDate', 'GPS GPSLatitude', 'GPS GPSLatitudeRef', 'GPS GPSLongitude', 'GPS GPSLongitudeRef', 'GPS GPSProcessingMethod', 'GPS GPSTimeStamp', 'GPS GPSVersionID', 'Image DateTime', 'Image ExifOffset', 'Image GPSInfo', 'Image ImageLength', 'Image ImageWidth', 'Image Make', 'Image Model', 'Image Orientation', 'Image Software', 'Image YCbCrPositioning', 'JPEGThumbnail', 'Thumbnail Compression', 'Thumbnail ImageLength', 'Thumbnail ImageWidth', 'Thumbnail JPEGInterchangeFormat', 'Thumbnail JPEGInterchangeFormatLength', 'Thumbnail Orientation', 'Thumbnail ResolutionUnit', 'Thumbnail XResolution', 'Thumbnail YResolution']
-"""
+# Read tags and extract primitive values from exifread special types that
+# can't be json serialized.
 def read_exif(filename):
     e = {}
     f = open(filename, 'rb')
-    exif = process_file(f)
+
+    try:
+        exif = process_file(f)
+    except Exception as exc:
+        print(filename, type(exc))
+        return e
+
     if 'JPEGThumbnail' in exif:
         del exif['JPEGThumbnail']
     if 'TIFFThumbnail' in exif:
@@ -157,6 +117,54 @@ def read_exif(filename):
 
     return e
 
+# Silently remove elements
+def remove_ids_from_list(l, ids):
+    try:
+        [l.remove(i) for i in ids]
+    except ValueError:
+        pass
+
+def chunks(l, n):
+    """ Yield successive n-sized chunks from l.
+    """
+    for i in range(0, len(l), n):
+        yield l[i:i+n]
+
+# Print running config
+print("From Date:", from_date)
+print("Exclude:", exclude)
+print("Include:", include)
+print("Thumbnails:", thumbnail_path)
+print("Output:", export_path)
+
+if include == []:
+    tags = session.query(Tag).all()
+else:
+    tags = session.query(Tag).filter(Tag.name.in_(include))
+
+if len(exclude) > 0:
+    exlusions = []
+    exclude_tags = session.query(Tag).filter(Tag.name.in_(exclude))
+    exclude_photos = []
+    for ex_tag in exclude_tags:
+        exclude_photos.extend(ex_tag.photo_list)
+
+    exclude_photos = list(set(exclude_photos))
+else:
+    exclude_photos = []
+
+
+photo_list = []
+q = session.query(Photo).filter(Photo.timestamp > from_date).all()
+photo_list = [p.id for p in q]
+
+photo_list = list(set(photo_list))
+unfiltered_count = len(photo_list)
+#[photo_list.remove(ex) for ex in exclude_photos]
+remove_ids_from_list(photo_list, exclude_photos)
+filtered_count = len(photo_list)
+print("Exporting:", str(filtered_count), "(" + str(unfiltered_count - filtered_count) + " filtered)")
+
 
 all_pictures = []
 
@@ -164,10 +172,14 @@ all_pictures = []
 tag_picture_hash = {t.name: t.photo_list for t in tags}
 tagsjs = {}
 tagsjs['NoTag'] = {'name':"NoTag", 'pictures':[], 'picture_count': 0, 'thumbnail': None}
-tagsjs['WithGPS'] = {'name':"WithGPS", 'pictures':[], 'picture_count': 0, 'thumbnail': None}
+
+# Can't get GPS if we don't read EXIF
+if with_exif:
+    tagsjs['WithGPS'] = {'name':"WithGPS", 'pictures':[], 'picture_count': 0, 'thumbnail': None}
 
 events = {}
 
+# We have to do this in chunks. sqlite borks with too many values ...
 for chunk in chunks(photo_list, 100):
         photo_chunk = session.query(Photo).filter(Photo.id.in_(chunk)).filter(Photo.exposure_time > from_date)
         for p in photo_chunk:
@@ -200,11 +212,14 @@ for chunk in chunks(photo_list, 100):
 
 
             pdict['datetime'] = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d %H:%M:%S')
-            pdict['exif'] = read_exif(p.filename)
 
-            if 'GPS GPSLongitudeRef' in pdict['exif']:
-                tagsjs['WithGPS']['picture_count'] = tagsjs['WithGPS']['picture_count'] + 1
-                tagsjs['WithGPS']['pictures'].append(p)
+            if with_exif:
+                pdict['exif'] = read_exif(p.filename)
+
+                if 'GPS GPSLongitudeRef' in pdict['exif']:
+                    tagsjs['WithGPS']['picture_count'] = tagsjs['WithGPS']['picture_count'] + 1
+                    p.tags.append('WithGPS')
+                    tagsjs['WithGPS']['pictures'].append(p)
 
             dump_json(pdict, export_path + "/pictures/" + str(p.id) + ".json")
 
@@ -213,6 +228,7 @@ for chunk in chunks(photo_list, 100):
                 shutil.copy(thumbnail_path + "/" + p.thumbnail, export_path + "/thumbnails/" + p.thumbnail)
             except FileNotFoundError:
                 print(p.thumbnail, "not found ... skipping copy")
+
 
 tags_file = [{'name': t, 'picture_count': tagsjs[t]['picture_count'], 'thumbnail': tagsjs[t]['thumbnail']} for t in tagsjs]
 
