@@ -85,7 +85,7 @@ def read_exif(filename):
     try:
         exif = process_file(f)
     except Exception as exc:
-        print(filename, type(exc))
+        print(filename, exc)
         return e
 
     if 'JPEGThumbnail' in exif:
