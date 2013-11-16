@@ -136,6 +136,7 @@ print("Exclude:", exclude)
 print("Include:", include)
 print("Thumbnails:", thumbnail_path)
 print("Output:", export_path)
+print("Exif:", with_exif)
 
 if include == []:
     tags = session.query(Tag).all()
@@ -155,8 +156,13 @@ else:
 
 
 photo_list = []
-q = session.query(Photo).filter(Photo.timestamp > from_date).all()
-photo_list = [p.id for p in q]
+if include == []:
+    q = session.query(Photo).filter(Photo.timestamp > from_date).all()
+    photo_list = [p.id for p in q]
+else:
+    q = session.query(Tag).filter(Tag.name.in_(include)).all()
+    for t in q:
+        photo_list.extend(t.photo_list)
 
 photo_list = list(set(photo_list))
 unfiltered_count = len(photo_list)
