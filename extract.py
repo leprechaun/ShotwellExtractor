@@ -207,6 +207,10 @@ for chunk in chunks(photo_list, 100):
                 tagsjs['NoTag']['picture_count'] = tagsjs['NoTag']['picture_count'] + 1
                 tagsjs['NoTag']['pictures'].append(p)
 
+                # Fixes the broken image on NoTag
+                if len(tagsjs['NoTag']['pictures']) == 1:
+                    tagsjs['NoTag']['thumbnail'] = p.thumbnail
+
             pdict = as_dict(p, "id,path,thumbnail,exposure_time,orientation,tags")
             pdict['size'] = {'height': p.height, 'width': p.width}
             dt = p.exposure_time
@@ -226,6 +230,10 @@ for chunk in chunks(photo_list, 100):
                     tagsjs['WithGPS']['picture_count'] = tagsjs['WithGPS']['picture_count'] + 1
                     p.tags.append('WithGPS')
                     tagsjs['WithGPS']['pictures'].append(p)
+
+                    # Fixes the broken image on WithGPS
+                    if len(tagsjs['WithGPS']['pictures']) == 1:
+                        tagsjs['WithGPS']['thumbnail'] = p.thumbnail
 
             dump_json(pdict, export_path + "/pictures/" + str(p.id) + ".json")
 
