@@ -66,6 +66,7 @@ os.mkdir(export_path)
 os.mkdir(export_path + "/pictures")
 os.mkdir(export_path + "/tags")
 os.mkdir(export_path + "/thumbnails")
+os.mkdir(export_path + "/events")
 
 def dump_json(obj, dest):
     js = json.dumps(obj)
@@ -235,6 +236,9 @@ for chunk in chunks(photo_list, 100):
                     if len(tagsjs['WithGPS']['pictures']) == 1:
                         tagsjs['WithGPS']['thumbnail'] = p.thumbnail
 
+            events[d]['picture_count'] = events[d]['picture_count'] + 1
+            events[d]['pictures'].append(p)
+
             dump_json(pdict, export_path + "/pictures/" + str(p.id) + ".json")
 
             all_pictures.append(as_dict(p, "id,thumbnail,path"))
@@ -253,6 +257,17 @@ for t in tagsjs:
 
     to['picture_count'] = len(to['pictures'])
     dump_json(to, export_path + "/tags/" + t + ".json")
+
+for event in events:
+    to = {'name': event, 'pictures': [], 'thumbnail': events[event]['thumbnail']}
+    for p in events[event]['pictures']:
+        to['pictures'].append(as_dict(p, "id,thumbnail,title,path"))
+
+    to['picture_count'] = len(to['pictures'])
+    dump_json(to, export_path + "events/" + event + ".json")
+
+eventsjson = [{'name':event, 'picture_count': events[event]['picture_count'], 'thumbnail': events[event]['thumbnail']} for event in events]
+dump_json(eventsjson, export_path + "/events/all-events.json")
 
 dump_json(all_pictures, export_path + "/pictures/all-pictures.json")
 dump_json(tags_file, export_path + "/tags/all-tags.json")
