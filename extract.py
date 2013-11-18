@@ -21,25 +21,26 @@ from exifread.tags import DEFAULT_STOP_TAG, FIELD_TYPES
 
 
 arguments = docopt(__doc__, version='0.1.1rc')
+
+# Allow the overriding of shotwell's database
 if arguments['--database'] is not None:
-    path = os.path.expanduser(arguments['--database'])
+    db_path = os.path.expanduser(arguments['--database'])
 else:
-    path = os.path.expanduser("~/.local/share/shotwell/data/photo.db")
+    db_path = os.path.expanduser("~/.local/share/shotwell/data/photo.db")
 
 
-engine = create_engine('sqlite:///' + path)
 
-Session = sessionmaker(bind=engine)
-session = Session()
-
+# Any picture contained in this tag list will be excluded from the export
 exclude = []
 if arguments['--exclude-tags'] is not None:
     exclude = arguments['--exclude-tags'].split(',')
 
+# If non empty, export will only include pictures from these tags
 include = []
 if arguments['--include-tags'] is not None:
     include = arguments['--include-tags'].split(',')
 
+# Exclude any picture dating before this date
 from_date = None
 if arguments['--from-date'] is not None:
     from_date = arguments['--from-date']
@@ -47,17 +48,25 @@ if arguments['--from-date'] is not None:
 else:
     from_date = 0
 
+# Override the default export path
 export_path = "output/"
 if arguments['--export-path'] is not None:
     export_path = arguments['--export-path']
 
+# Override the default shotwell thumbnails path
 thumbnail_path = os.path.expanduser("~/.cache/shotwell/thumbs/thumbs128")
 if arguments['--thumbnail-path'] is not None:
     thumbnail_path = os.path.expanduser(arguments['--thumbnail-path'])
     if not os.path.isdir(thumbnail_path):
         exit()
 
+# Whether you want to read exif or not. It's expensive.
 with_exif = arguments['-e']
+
+engine = create_engine('sqlite:///' + db_path)
+
+Session = sessionmaker(bind=engine)
+session = Session()
 
 
 # Watchout, this could be dangerous. Perhaps it shouldn't be the default.
@@ -193,17 +202,24 @@ for chunk in chunks(photo_list, 100):
             p.tags = []
             for tag in tag_picture_hash:
 
+                # If tag contains the picture id, append the tag
                 if p.id in tag_picture_hash[tag]:
                     p.tags.append(tag)
+
+                    # create the tag object if it doesn't exit
                     if tag not in tagsjs:
                         tago = {'name': tag, 'thumbnail': p.thumbnail, 'picture_count': 1, 'pictures': [p]}
                         tagsjs[tag] = tago
+
+                    # Append the picture, increment the picture count if it does
                     else:
                         tagsjs[tag]['pictures'].append(p)
                         tagsjs[tag]['picture_count'] = tagsjs[tag]['picture_count'] + 1
 
 
+            # If the picture isn't tagged
             if len(p.tags) == 0:
+                # Create artificial 'NoTag'
                 p.tags.append('NoTag')
                 tagsjs['NoTag']['picture_count'] = tagsjs['NoTag']['picture_count'] + 1
                 tagsjs['NoTag']['pictures'].append(p)
@@ -214,16 +230,19 @@ for chunk in chunks(photo_list, 100):
 
             pdict = as_dict(p, "id,path,thumbnail,exposure_time,orientation,tags")
             pdict['size'] = {'height': p.height, 'width': p.width}
+
+            # Use the best datetime for the picture, exif or file time
             dt = p.exposure_time
             if p.exposure_time == 0:
                 dt = p.time_created
 
-            if p.title is None:
-                p.title = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d %H:%M:%S')
-
-
             pdict['datetime'] = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d %H:%M:%S')
+            # Default the title to datetime if it's not set
+            if p.title is None:
+                p.title = pdict['datetime']
 
+
+            # Process EXIF if requested
             if with_exif:
                 pdict['exif'] = read_exif(p.filename)
 
@@ -236,12 +255,24 @@ for chunk in chunks(photo_list, 100):
                     if len(tagsjs['WithGPS']['pictures']) == 1:
                         tagsjs['WithGPS']['thumbnail'] = p.thumbnail
 
+                    longitude = pdict['exif']['GPS GPSLongitude']
+                    latitude = pdict['exif']['GPS GPSLatitude']
+
+            # Make the events hash
+            d = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d')
+            if d not in events:
+                events[d] = {'name':d, 'thumbnail': p.thumbnail, 'picture_count': 0, 'pictures': []}
+
             events[d]['picture_count'] = events[d]['picture_count'] + 1
             events[d]['pictures'].append(p)
 
+            # Dump the picture json to disk
             dump_json(pdict, export_path + "/pictures/" + str(p.id) + ".json")
 
-            all_pictures.append(as_dict(p, "id,thumbnail,path"))
+            # Append a picture ref for all pictures
+            all_pictures.append(as_dict(p, "id,thumbnail"))
+
+            # Copy the thumbnail over
             try:
                 shutil.copy(thumbnail_path + "/" + p.thumbnail, export_path + "/thumbnails/" + p.thumbnail)
             except FileNotFoundError:
