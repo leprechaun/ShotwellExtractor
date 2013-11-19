@@ -9,10 +9,8 @@ from sqlalchemy.orm import relationship
 
 from sqlalchemy import event
 
-import stagger
-
 import os.path
-
+import datetime
 import urllib.parse
 
 Base = declarative_base()
@@ -53,6 +51,26 @@ class Photo(Base):
     @property
     def path(self):
         return self.filename.lstrip("/home/leprechaun/Pictures")
+
+    @property
+    def datetime(self):
+        if self.exposure_time is not None:
+            dt = self.exposure_time
+        else:
+            dt = self.time_created
+
+        dt = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d %H:%M:%S')
+        return dt
+
+    @property
+    def date(self):
+        if self.exposure_time is not None:
+            dt = self.exposure_time
+        else:
+            dt = self.time_created
+
+        dt = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d')
+        return dt
 
     @property
     def thumbnail(self):

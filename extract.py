@@ -19,7 +19,6 @@ from exifread import process_file
 from exifread.tags import DEFAULT_STOP_TAG, FIELD_TYPES
 
 
-
 arguments = docopt(__doc__, version='0.1.1rc')
 
 # Allow the overriding of shotwell's database
@@ -88,44 +87,6 @@ def as_dict(obj, attr):
 
 # Read tags and extract primitive values from exifread special types that
 # can't be json serialized.
-def read_exif(filename):
-    e = {}
-    f = open(filename, 'rb')
-
-    try:
-        exif = process_file(f)
-    except Exception as exc:
-        print(filename, exc)
-        return e
-
-    if 'JPEGThumbnail' in exif:
-        del exif['JPEGThumbnail']
-    if 'TIFFThumbnail' in exif:
-        del exif['TIFFThumbnail']
-
-    exif_tag_names = list(exif.keys())
-    exif_tag_names.sort()
-
-    for etn in exif_tag_names:
-        if type(exif[etn].values) == str:
-            e[etn] = exif[etn].values
-
-        elif type(exif[etn].values) == int:
-            e[etn] = exif[etn].values
-
-        elif type(exif[etn].values) == list:
-            tmp = []
-            for v in exif[etn].values:
-                if type(v) == exifread.utils.Ratio:
-                    tmp.append((v.num, v.den))
-                elif type(v) == int:
-                    tmp.append(v)
-                else:
-                    print(etn, v, type(v))
-
-            e[etn] = tmp
-
-    return e
 
 # Silently remove elements
 def remove_ids_from_list(l, ids):
@@ -139,6 +100,106 @@ def chunks(l, n):
     """
     for i in range(0, len(l), n):
         yield l[i:i+n]
+
+class PictureRef(object):
+    def get_dict(self, picture, with_exif=False):
+        o = {}
+        o['id'] = picture.id
+
+        o['datetime'] = picture.datetime
+        o['path'] = picture.path
+
+        if picture.title is None:
+            o['title'] = o['datetime']
+        else:
+            o['title'] = picture.title
+
+        if with_exif:
+            o['exif'] = self.read_exif(picture.filename)
+
+        o['tags'] = picture.tags
+        o['size'] = {'height': picture.height, 'width': picture.width}
+        return o
+
+    def read_exif(self, filename):
+        e = {}
+        f = open(filename, 'rb')
+
+        try:
+            exif = process_file(f)
+        except Exception as exc:
+            print(filename, exc)
+            return e
+
+        if 'JPEGThumbnail' in exif:
+            del exif['JPEGThumbnail']
+        if 'TIFFThumbnail' in exif:
+            del exif['TIFFThumbnail']
+
+        exif_tag_names = list(exif.keys())
+        exif_tag_names.sort()
+
+        for etn in exif_tag_names:
+            if type(exif[etn].values) == str:
+                e[etn] = exif[etn].values
+
+            elif type(exif[etn].values) == int:
+                e[etn] = exif[etn].values
+
+            elif type(exif[etn].values) == list:
+                tmp = []
+                for v in exif[etn].values:
+                    if type(v) == exifread.utils.Ratio:
+                        tmp.append((v.num, v.den))
+                    elif type(v) == int:
+                        tmp.append(v)
+                    else:
+                        print(etn, v, type(v))
+
+                e[etn] = tmp
+
+        return e
+
+class PictureList(object):
+    def __init__(self, name):
+        self._name = name
+        self._pictures = []
+
+    def add_picture(self, picture):
+        self._pictures.append(picture)
+
+    def picture_count(self):
+        return len(self._pictures)
+
+    def get_dict(self):
+        o = {}
+        o['name'] = self._name
+        o['picture_count'] = len(self._pictures)
+        o['pictures'] = [self.get_picture_dict(p) for p in self._pictures]
+        if len(self._pictures) > 0:
+            o['thumbnail'] = self._pictures[0].thumbnail
+
+        return o
+
+    def get_picture_dict(self, picture):
+        o = {}
+        o['id'] = picture.id
+        o['thumbnail'] = picture.thumbnail
+
+        o['title'] = picture.title
+        if o['title'] is None:
+            o['title'] = picture.datetime
+
+        return o
+
+    def get_ref(self):
+        o = {}
+        o['name'] = self._name
+        o['picture_count'] = len(self._pictures)
+        if len(self._pictures) > 0:
+            o['thumbnail'] = self._pictures[0].thumbnail
+
+        return o
 
 # Print running config
 print("From Date:", from_date)
@@ -186,12 +247,10 @@ all_pictures = []
 
 
 tag_picture_hash = {t.name: t.photo_list for t in tags}
-tagsjs = {}
-tagsjs['NoTag'] = {'name':"NoTag", 'pictures':[], 'picture_count': 0, 'thumbnail': None}
 
-# Can't get GPS if we don't read EXIF
-if with_exif:
-    tagsjs['WithGPS'] = {'name':"WithGPS", 'pictures':[], 'picture_count': 0, 'thumbnail': None}
+tagsjs = {}
+tagsjs['NoTag'] = PictureList('NoTag')
+tagsjs['WithGPS'] = PictureList('WithGPS')
 
 events = {}
 
@@ -208,66 +267,29 @@ for chunk in chunks(photo_list, 100):
 
                     # create the tag object if it doesn't exit
                     if tag not in tagsjs:
-                        tago = {'name': tag, 'thumbnail': p.thumbnail, 'picture_count': 1, 'pictures': [p]}
+                        tago = PictureList(tag)
                         tagsjs[tag] = tago
 
-                    # Append the picture, increment the picture count if it does
-                    else:
-                        tagsjs[tag]['pictures'].append(p)
-                        tagsjs[tag]['picture_count'] = tagsjs[tag]['picture_count'] + 1
+                    tagsjs[tag].add_picture(p)
 
 
             # If the picture isn't tagged
             if len(p.tags) == 0:
                 # Create artificial 'NoTag'
                 p.tags.append('NoTag')
-                tagsjs['NoTag']['picture_count'] = tagsjs['NoTag']['picture_count'] + 1
-                tagsjs['NoTag']['pictures'].append(p)
+                tagsjs['NoTag'].add_picture(p)
 
-                # Fixes the broken image on NoTag
-                if len(tagsjs['NoTag']['pictures']) == 1:
-                    tagsjs['NoTag']['thumbnail'] = p.thumbnail
-
-            pdict = as_dict(p, "id,path,thumbnail,exposure_time,orientation,tags")
-            pdict['size'] = {'height': p.height, 'width': p.width}
-
-            # Use the best datetime for the picture, exif or file time
-            dt = p.exposure_time
-            if p.exposure_time == 0:
-                dt = p.time_created
-
-            pdict['datetime'] = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d %H:%M:%S')
-            # Default the title to datetime if it's not set
-            if p.title is None:
-                p.title = pdict['datetime']
-
-
-            # Process EXIF if requested
-            if with_exif:
-                pdict['exif'] = read_exif(p.filename)
-
-                if 'GPS GPSLongitudeRef' in pdict['exif']:
-                    tagsjs['WithGPS']['picture_count'] = tagsjs['WithGPS']['picture_count'] + 1
-                    p.tags.append('WithGPS')
-                    tagsjs['WithGPS']['pictures'].append(p)
-
-                    # Fixes the broken image on WithGPS
-                    if len(tagsjs['WithGPS']['pictures']) == 1:
-                        tagsjs['WithGPS']['thumbnail'] = p.thumbnail
-
-                    longitude = pdict['exif']['GPS GPSLongitude']
-                    latitude = pdict['exif']['GPS GPSLatitude']
+            pr = PictureRef()
 
             # Make the events hash
-            d = datetime.datetime.fromtimestamp(int(dt)).strftime('%Y-%m-%d')
+            d = p.date
             if d not in events:
-                events[d] = {'name':d, 'thumbnail': p.thumbnail, 'picture_count': 0, 'pictures': []}
+                events[d] = PictureList(d)
 
-            events[d]['picture_count'] = events[d]['picture_count'] + 1
-            events[d]['pictures'].append(p)
+            events[d].add_picture(p)
 
             # Dump the picture json to disk
-            dump_json(pdict, export_path + "/pictures/" + str(p.id) + ".json")
+            dump_json(pr.get_dict(p, with_exif), export_path + "/pictures/" + str(p.id) + ".json")
 
             # Append a picture ref for all pictures
             all_pictures.append(as_dict(p, "id,thumbnail"))
@@ -279,26 +301,17 @@ for chunk in chunks(photo_list, 100):
                 print(p.thumbnail, "not found ... skipping copy")
 
 
-tags_file = [{'name': t, 'picture_count': tagsjs[t]['picture_count'], 'thumbnail': tagsjs[t]['thumbnail']} for t in tagsjs]
 
+all_tags = []
 for t in tagsjs:
-    to = {'name': t, 'pictures': [], 'thumbnail': tagsjs[t]['thumbnail']}
-    for p in tagsjs[t]['pictures']:
-        to['pictures'].append(as_dict(p, "id,thumbnail,title,path"))
+    dump_json(tagsjs[t].get_dict(), export_path + "/tags/" + t + ".json")
+    all_tags.append(tagsjs[t].get_ref())
 
-    to['picture_count'] = len(to['pictures'])
-    dump_json(to, export_path + "/tags/" + t + ".json")
+dump_json(all_tags, export_path + "/tags/all-tags.json")
 
+all_events = []
 for event in events:
-    to = {'name': event, 'pictures': [], 'thumbnail': events[event]['thumbnail']}
-    for p in events[event]['pictures']:
-        to['pictures'].append(as_dict(p, "id,thumbnail,title,path"))
+    dump_json(events[event].get_dict(), export_path + "events/" + event + ".json")
+    all_events.append(events[event].get_ref())
 
-    to['picture_count'] = len(to['pictures'])
-    dump_json(to, export_path + "events/" + event + ".json")
-
-eventsjson = [{'name':event, 'picture_count': events[event]['picture_count'], 'thumbnail': events[event]['thumbnail']} for event in events]
-dump_json(eventsjson, export_path + "/events/all-events.json")
-
-dump_json(all_pictures, export_path + "/pictures/all-pictures.json")
-dump_json(tags_file, export_path + "/tags/all-tags.json")
+dump_json(all_events, export_path + "/events/all-events.json")
