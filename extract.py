@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Usage:
-  extract.py [--database=<database>] [--include-tags=<tags>] [--exclude-tags=<tags>] [--from-date=<Y/m/d>] [--export-path=<path>] [--thumbnail-path=<path>] [-e]
+  extract.py [--database=<database>] [--include-tags=<tags>] [--exclude-tags=<tags>] [--from-date=<Y/m/d>] [--export-path=<path>] [--thumbnail-path=<path>] [-e] [--skip=<skip>]
 """
 from docopt import docopt
 
@@ -59,6 +59,14 @@ if arguments['--thumbnail-path'] is not None:
     if not os.path.isdir(thumbnail_path):
         exit()
 
+if '--skip' in arguments:
+    if arguments['--skip'] is not None:
+        skip = arguments['--skip'].split(",")
+    else:
+        skip = ""
+else:
+    skip = ""
+
 # Whether you want to read exif or not. It's expensive.
 with_exif = arguments['-e']
 
@@ -69,12 +77,22 @@ session = Session()
 
 
 # Watchout, this could be dangerous. Perhaps it shouldn't be the default.
-shutil.rmtree(export_path)
+#shutil.rmtree(export_path)
+
+dirs = ["/", "/pictures", "/tags", "/thumbnails", "/events"]
+for d in dirs:
+    try:
+        os.mkdir(export_path + d)
+    except FileExistsError:
+        True
+
+"""
 os.mkdir(export_path)
 os.mkdir(export_path + "/pictures")
 os.mkdir(export_path + "/tags")
 os.mkdir(export_path + "/thumbnails")
 os.mkdir(export_path + "/events")
+"""
 
 def dump_json(obj, dest):
     js = json.dumps(obj)
@@ -289,7 +307,8 @@ for chunk in chunks(photo_list, 100):
             events[d].add_picture(p)
 
             # Dump the picture json to disk
-            dump_json(pr.get_dict(p, with_exif), export_path + "/pictures/" + str(p.id) + ".json")
+            if "pictures" not in skip:
+                dump_json(pr.get_dict(p, with_exif), export_path + "/pictures/" + str(p.id) + ".json")
 
             # Append a picture ref for all pictures
             all_pictures.append(as_dict(p, "id,thumbnail"))
