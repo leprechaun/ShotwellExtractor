@@ -126,6 +126,7 @@ class PictureRef(object):
 
         o['datetime'] = picture.datetime
         o['path'] = picture.path
+        o['thumbnail'] = picture.thumbnail
 
         if picture.title is None:
             o['title'] = o['datetime']
